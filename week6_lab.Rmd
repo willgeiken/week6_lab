@@ -1,0 +1,205 @@
+---
+title: "Week 6 Lab"
+author: "Will Geiken"
+date: "11/10/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+library(tidyverse)
+library(palmerpenguins)
+library(broom)
+library(ggpubr)
+```
+
+# Part 1: Attach Packages
+
+Done in the start code chunk.
+
+# Part 2: A rank-based test example (Mann Whitney U)
+
+```{r}
+set.seed(1414)
+gp_1 <- sample.int(20, size = 15, replace = TRUE)
+
+set.seed(1424)
+gp_2 <- sample.int(30, size = 15, replace = TRUE)
+```
+
+Check out the data
+
+```{r}
+hist(gp_1)
+```
+```{r}
+hist(gp_2)
+```
+
+We might choose a rank-based test because:
+1. Not clearly normally distributed looking at histograms
+2. Somewhat small sample size (n=15 for both)
+3. I've decided that ranks (or medians) are a more valuable metric to compare for these data
+
+Perform the Mann-Whitney U! Answers “Is there a significant difference in ranks (medians) between gp_1 and gp_2?” using the wilcox.test() function.
+
+```{r}
+my_mwu <- wilcox.test(gp_1, gp_2)
+```
+
+The warning is fine, if there are ties in ranks, the p-value is estimated using a normal approximation and is fine.
+
+Call up my_mwu and see a p-value of 0.28
+It means that if the null hypothesis is true (these samples were drawn from populations with the same median), there is a probability of 0.28 that we could have found median values at least as different as ours by chance. In other words: not sufficient evidence to reject the null hypothesis of equal ranks (or medians) using a significance level of 0.05.
+
+# Part 3: Simple linear regression
+
+We're exploring the relationship between flipper length and body mass for penguins, including all 3 penguin species included in the penguins dataset.
+
+### A: Look at the Data!
+
+Make an exploratory scatterplot of penguin flipper length versus body mass.
+
+```{r}
+ggplot(data = penguins, aes(x = flipper_length_mm, y = body_mass_g)) +
+  geom_point()
+```
+
+Does a linear relationship make sense?
+  Probably
+Do we have any concerns about modeling as a linear relationship?
+  Sure, we should do some tests to make sure that is responsible.
+Any notable outliers?
+  Not reaaaaally.
+Initial thoughts about homoscedasticity.
+  Looks like its spread evenly away form where our line would be.
+  
+## B: Model it!
+
+We haven't met a lot of assumptions yet, and that's because they're based on model residuals, which we can't calculate until after we find the predicted values from the model.
+
+So, make the model!
+
+```{r}
+#make the model using lm(dependent ~ independent, data)
+penguin_lm <- lm(body_mass_g ~ flipper_length_mm, data = penguins)
+
+#show the model using summary()
+summary(penguin_lm)
+```
+
+A couple highlights:
+-Both the intercept and flipper_length_mm coefficients are significantly different from zero (not super interesting)
+-The Multiple R^2^ value is 0.759 - meaning that 75.9% of variance in body mass is explained by flipper length
+
+## C: Access model outputs
+
+We can access the coefficients for the model using:
+
+The slope is 49.69 (g / mm)
+The y-intercept is -5780.83 (g)
+The full equation is mass = 49.69*(flipper length) + (-5780.83)
+But trying to get all of the statistical information from the summary() function would be kind of a mess.
+
+We can use the broom::tidy() function to get the model outputs in nice data frame format:
+
+```{r}
+penguin_lm_tidy <- broom::tidy(penguin_lm)
+```
+
+This gives us a data table that we can refer to later. Examples below
+
+```{r}
+penguin_int <- penguin_lm_tidy$estimate[1]
+penguin_int
+```
+
+```{r}
+penguin_coef <- penguin_lm_tidy$estimate[2]
+penguin_coef
+```
+
+To check out other statistics (degrees of freedom, F statistic, p-value, etc.) use broom::glance
+
+```{r}
+penguin_lm_out <- broom::glance(penguin_lm)
+penguin_lm_out
+```
+
+We can use the two data sets above to write a statement about the model that will automatically update if anything in the model changes.
+
+"Simple linear regression was used to explore the relationship between penguin flipper length (mm) and body mass (g) across all three penguin species, and including both male and female penguins. A significant regression model was found ($\beta$ = `r round(penguin_coef,3)`, F(`r penguin_lm_out$df`,`r penguin_lm_out$df.residual`) = `r round(penguin_lm_out$statistic,1)`, p < 0.001) with an R^2^ of `r round(penguin_lm_out$r.squared,3)`."
+
+Note: the values for $\beta$, F,the p-value, and R^2^ are all automatically updated. 
+Note that Alison uses “p < 0.001” here if the p-value is very small - this is somewhat standard.
+
+## Explore Model Assumptions
+
+1. Linearly related variables (CHECK - already looked & thought hard)
+2. Normally distributed residuals
+3. Homoscedasticity (constant residuals variance)
+4. iid residuals (no serial correlation) - more often a concern in time series data
+
+Use plot() to show 4 useful visualizations
+
+```{r}
+plot(penguin_lm)
+```
+
+Notice that four plots show up. What do they show? Make sure to watch Part 2 of the lecture, which discusses how we can interpret each of these diagnostic plots.
+
+The first one: fitted values vs. residuals
+The second one: QQ-plot for residuals
+The third one: another way of looking at fitted vs. residuals (these are just standardized residuals, but you can interpret it the same way)
+The fourth one: Cook’s distance, a measure of “influence” or “leverage” that individual points have on the model - often considered a way to explore outliers.
+See the Week 6 Part 2 Lecture video for more information about how to interpret these outcomes, but in summary: graphs 1 & 3 are useful for thinking about homoscedasticity; graph 2 (QQ plot) helps us consider normality of residuals; graph 4 reveals the Cook’s distance (a measure of how much leverage any single observation has on the model).
+
+## E: Visualize the model
+
+Now that we've explored our assumptions and (I guess) decided that linear regression is a valid tool, let's look at the model.
+
+- Use `geom_smooth(method = "lm")` to add a linear model to an existing scatterplot
+
+- Use `stat_cor()` and/or `stat_regline_equation()` to add equation information directly to the plot panel, at an x- and y-position that you specify (and yes, you can mess with the digits & appearance here)
+
+```{r}
+ggplot(data = penguins, aes(x = flipper_length_mm, y = body_mass_g)) +
+  geom_point(size = 2) +
+  geom_smooth(method = "lm",
+              color = "darkred",
+              size = 0.5,
+              fill = "grey10",
+              alpha = 0.5) +
+  theme_light() +
+  ggpubr::stat_regline_equation(label.x = 180, label.y = 5700) 
+#last line adds the equaltion to the chart, the label positions the equation on the chart at certain x and y coordinates
+```
+
+## F. Find Pearson's r for correlation
+
+In lecture we talked about the coefficient of determination, R^2^, which tells us how much of the variance in the dependent variable is explained by the model. 
+
+We might also want to explore the strength of the correlation (degree of relationship) between two variables which, for two linearly related continuous variables, can be expressed using Pearson's *r*. 
+
+Pearson's *r* ranges in value from -1 (perfectly negatively correlated - as one variable increases the other decreases) to 1 (perfectly positively correlated - as one variable increases the other increases). A correlation of 0 means that there is no degree of relationship between the two variables. 
+
+Typical guidelines look something like this (there's wiggle room in there): 
+
+- *r* = 0: no correlation
+- *r* < |0.3|: weak correlation
+- *r* between |0.3| and |0.7|: moderate correlation
+- *r* > |0.7|: strong correlation
+
+We'll use the `cor.test()` function, adding the two vectors (`flipper_length_mm` and `body_mass_g`) as the arguments. The function reports the Pearson's *r* value, and performs a hypothesis test with null hypothesis that the correlation = 0. 
+
+```{r}
+penguins_cor <- cor.test(penguins$flipper_length_mm, penguins$body_mass_g)
+```
+
+Estimate shows your r stat. Other listed numbers shown below.
+
+Here, we see that there is a strong positive correlation between penguin flipper length and body mass (r = 0.87, t(340) = 32.72, p < 0.001).
+
+Note: Once you have a “template” statement, you can just replace penguins_cor here with whatever your correlation analysis is stored as! You don’t need to recreate the wheel every time!
+
+# THAT'S IT!
